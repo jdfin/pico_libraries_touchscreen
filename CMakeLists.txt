@@ -15,3 +15,5 @@ target_link_libraries(touchscreen INTERFACE
     hardware_i2c
     misc
 )
+
+add_subdirectory(test)
