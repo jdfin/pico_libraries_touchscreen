@@ -17,14 +17,18 @@ public:
 
     Ft6336u(i2c_inst_t *i2c, int scl_pin, int sda_pin, int rst_pin, int int_pin,
             int i2c_freq = 400'000);
-    virtual ~Ft6336u();
+
+    virtual ~Ft6336u() = default;
 
     bool init(int verbosity = 0);
 
     uint i2c_freq() const { return _i2c_freq; }
 
-    int get_touch(int &e1, int &x1, int &y1, int &e2, int &x2, int &y2,
-                  int verbosity = 0);
+    virtual void set_rotation(Rotation r) override;
+
+    virtual int get_touches(int *col, int *row, int touch_cnt_max, int verbosity = 0) override;
+
+    virtual void get_event(Event &event) override;
 
     void dump();
 
@@ -48,7 +52,7 @@ private:
 
     static constexpr uint32_t TRST_ms = 5;
 
-    enum Register : uint8_t {
+    enum Reg : uint8_t {
         DEV_MODE = 0x00, // Device Mode
         //GEST_ID = 0x01,   // Gesture ID
         TD_STATUS = 0x02, // Number of touch points
@@ -107,7 +111,9 @@ private:
 
     void reset();
 
-    int read(Register reg, uint8_t *buf, int buf_len);
+    int read(Reg reg, uint8_t *buf, int buf_len);
 
-    int write(Register reg, const uint8_t *buf, int buf_len);
+    int write(Reg reg, const uint8_t *buf, int buf_len);
+
+    void rotate(int x, int y, int& col, int& row) const;
 };

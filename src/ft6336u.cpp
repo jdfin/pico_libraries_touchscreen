@@ -13,7 +13,7 @@
 
 Ft6336u::Ft6336u(i2c_inst_t *i2c, int scl_pin, int sda_pin, int rst_pin,
                  int int_pin, int i2c_freq) :
-    Touchscreen(),
+    Touchscreen(480, 320),
     _i2c(i2c),
     _scl_pin(scl_pin),
     _sda_pin(sda_pin),
@@ -41,11 +41,6 @@ Ft6336u::Ft6336u(i2c_inst_t *i2c, int scl_pin, int sda_pin, int rst_pin,
         // chip; in those cases it should see it low.
         gpio_pull_down(_int_pin);
     }
-}
-
-
-Ft6336u::~Ft6336u()
-{
 }
 
 
@@ -89,7 +84,8 @@ void Ft6336u::reset()
     // wait for INT high
     // measured to be ~125 msec
     start_us = time_us_32();
-    while (!gpio_get(_int_pin) && (time_us_32() - start_us) <= max_wait_us);
+    while (!gpio_get(_int_pin) && (time_us_32() - start_us) <= max_wait_us)
+        ;
     xassert(gpio_get(_int_pin));
     printf("INT high %lu usec after reset\n", time_us_32() - start_us);
 
@@ -117,41 +113,41 @@ bool Ft6336u::init(int verbosity)
 
     uint8_t buf[5];
 
-    if (read(Register::FOCALTECH_ID, buf, 1) != 1) {
+    if (read(Reg::FOCALTECH_ID, buf, 1) != 1) {
         if (verbosity >= 1)
-            printf("Ft6336u: ERROR: reading 0x%02x\n",
-                   int(Register::FOCALTECH_ID));
+            printf("Ft6336u: ERROR: reading 0x%02x\n", int(Reg::FOCALTECH_ID));
         return false; // error reading ID
     }
     if (verbosity >= 2) {
-        printf("Ft6336u: register 0x%02x = 0x%02x\n",
-               int(Register::FOCALTECH_ID), int(buf[0]));
+        printf("Ft6336u: register 0x%02x = 0x%02x\n", int(Reg::FOCALTECH_ID),
+               int(buf[0]));
     }
     if (buf[0] != 0x11) {
         if (verbosity >= 1)
             printf(
                 "Ft6336u: ERROR: register 0x%02x = 0x%02x, expected 0x%02x\n",
-                int(Register::FOCALTECH_ID), int(buf[0]), 0x11);
+                int(Reg::FOCALTECH_ID), int(buf[0]), 0x11);
         return false; // incorrect ID
     }
 
-    if (read(Register::CIPHER_MID, buf, 5) != 5) {
+    if (read(Reg::CIPHER_MID, buf, 5) != 5) {
         if (verbosity >= 1)
             printf("Ft6336u: ERROR: reading 0x%02x..0x%02x\n",
-                   int(Register::CIPHER_MID), int(Register::CIPHER_MID) + 4);
+                   int(Reg::CIPHER_MID), int(Reg::CIPHER_MID) + 4);
         return false; // error reading IDs
     }
     if (verbosity >= 2) {
-        printf("Ft6336u: registers 0x%02x..0x%02x =",
-               int(Register::FOCALTECH_ID), int(Register::FOCALTECH_ID) + 4);
-        for (int i = 0; i < 5; i++) printf(" 0x%02x", int(buf[i]));
+        printf("Ft6336u: registers 0x%02x..0x%02x =", int(Reg::FOCALTECH_ID),
+               int(Reg::FOCALTECH_ID) + 4);
+        for (int i = 0; i < 5; i++)
+            printf(" 0x%02x", int(buf[i]));
         printf("\n");
     }
     if (buf[0] != 0x26) {
         if (verbosity >= 1)
             printf(
                 "Ft6336u: ERROR: register 0x%02x = 0x%02x, expected 0x%02x\n",
-                int(Register::CIPHER_MID), int(buf[0]), 0x26);
+                int(Reg::CIPHER_MID), int(buf[0]), 0x26);
         return false; // incorrect CIPHER_MID
     }
     if (buf[1] != 0x00 && buf[1] != 0x01 && buf[1] != 0x02) {
@@ -159,22 +155,28 @@ bool Ft6336u::init(int verbosity)
             printf(
                 "Ft6336u: ERROR: register 0x%02x = 0x%02x,"
                 " expected 0x%02x, 0x%02x, or 0x%02x\n",
-                int(Register::CIPHER_MID) + 1, int(buf[1]), 0x00, 0x01, 0x02);
+                int(Reg::CIPHER_MID) + 1, int(buf[1]), 0x00, 0x01, 0x02);
         return false; // incorrect CIPHER_LOW
     }
     if (buf[4] != 0x64) {
         if (verbosity >= 1)
             printf(
                 "Ft6336u: ERROR: register 0x%02x = 0x%02x, expected 0x%02x\n",
-                int(Register::CIPHER_MID) + 4, int(buf[4]), 0x64);
+                int(Reg::CIPHER_MID) + 4, int(buf[4]), 0x64);
         return false; // incorrect CIPHER_HIGH
     }
     return true;
 }
 
 
-int Ft6336u::get_touch(int &e1, int &x1, int &y1, int &e2, int &x2, int &y2,
-                       int verbosity)
+void Ft6336u::set_rotation(Rotation r)
+{
+    Touchscreen::set_rotation(r);
+    // TBD
+}
+
+
+int Ft6336u::get_touches(int *col, int *row, int touch_cnt_max, int verbosity)
 {
     constexpr int buf_len = 13;
     uint8_t buf[buf_len];
@@ -189,47 +191,50 @@ int Ft6336u::get_touch(int &e1, int &x1, int &y1, int &e2, int &x2, int &y2,
     // everything at once takes 16 i2c bytes and is more fun.
     // But we usually only need the status register (touch count = 0) or it
     // plus four more (touch count = 1).
-    if (read(Register::TD_STATUS, buf, buf_len) != buf_len) {
+    if (read(Reg::TD_STATUS, buf, buf_len) != buf_len) {
         if (verbosity >= 1)
             printf("Ft6336::get_touch: ERROR: reading registers\n");
         return -1;
     }
     if (verbosity >= 2) {
         printf("Ft6336u::get_touch:");
-        for (int i = 0; i < buf_len; i++) printf(" 0x%02x", int(buf[i]));
+        for (int i = 0; i < buf_len; i++)
+            printf(" 0x%02x", int(buf[i]));
         printf("\n");
     }
 
-    int cnt = buf[0] & 0x0f;
+    int touch_cnt = buf[0] & 0x0f;
     // should be 0, 1, or 2
-    if (cnt < 0 || cnt > 2) {
+    if (touch_cnt < 0 || touch_cnt > 2) {
         if (verbosity >= 1)
             printf("Ft6336::get_touch: ERROR: TD_STATUS=0x%02x invalid\n",
                    int(buf[0]));
         return -1;
     }
 
-    if (cnt >= 1) {
-        e1 = (buf[1] >> 6) & 0x03;
-        x1 = (int(buf[1] & 0x0f) << 8) | buf[2];
-        y1 = (int(buf[3] & 0x0f) << 8) | buf[4];
+    if (touch_cnt >= 1 && touch_cnt_max >= 1) {
+        //int e = (buf[1] >> 6) & 0x03;
+        int x = (int(buf[1] & 0x0f) << 8) | buf[2];
+        int y = (int(buf[3] & 0x0f) << 8) | buf[4];
+        rotate(x, y, col[0], row[0]);
         // buf[5], buf[6] not yet used
-        if (cnt >= 2) {
-            e2 = (buf[7] >> 6) & 0x03;
-            x2 = (int(buf[7] & 0x0f) << 8) | buf[8];
-            y2 = (int(buf[9] & 0x0f) << 8) | buf[10];
+        if (touch_cnt >= 2 && touch_cnt_max >= 2) {
+            //e = (buf[7] >> 6) & 0x03;
+            x = (int(buf[7] & 0x0f) << 8) | buf[8];
+            y = (int(buf[9] & 0x0f) << 8) | buf[10];
+            rotate(x, y, col[1], row[1]);
             // buf[11], buf[12] not yet used
         }
     }
 
-    return cnt;
+    return touch_cnt;
 }
 
 // Both i2c_write and i2c_read return:
 //   number of bytes on success
 //   PICO_ERROR_GENERIC if no ack
 //   PICO_ERROR_TIMEOUT if timeout
-int Ft6336u::read(Ft6336u::Register reg, uint8_t *buf, int buf_len)
+int Ft6336u::read(Ft6336u::Reg reg, uint8_t *buf, int buf_len)
 {
     constexpr uint timeout_us = 10'000;
     int err = i2c_write_timeout_us(_i2c, i2c_adrs, (const uint8_t *)(&reg), 1,
@@ -240,7 +245,7 @@ int Ft6336u::read(Ft6336u::Register reg, uint8_t *buf, int buf_len)
 }
 
 
-int Ft6336u::write(Ft6336u::Register reg, const uint8_t *buf, int buf_len)
+int Ft6336u::write(Ft6336u::Reg reg, const uint8_t *buf, int buf_len)
 {
     constexpr int xbuf_len = 32;
     uint8_t xbuf[xbuf_len];
@@ -263,6 +268,22 @@ int Ft6336u::write(Ft6336u::Register reg, const uint8_t *buf, int buf_len)
 }
 
 
+// Given a reading (x, y) from the chip, use its physical x_res and y_res
+// along with the touchscreen's rotation to adjust (x, y) to the correct
+// coordinates.
+void Ft6336u::rotate(int x, int y, int &col, int &row) const
+{
+    // TBD
+    col = x;
+    row = y;
+}
+
+
+void Ft6336u::get_event([[maybe_unused]] Event &event)
+{
+}
+
+
 void Ft6336u::dump()
 {
     constexpr int buf_len = 16;
@@ -270,8 +291,9 @@ void Ft6336u::dump()
 
     for (int i = 0; i < 16; i++) {
         printf("%02x:", i * 16);
-        if (read(Register(i * 16), buf, buf_len) == buf_len) {
-            for (int j = 0; j < buf_len; j++) printf(" %02x", buf[j]);
+        if (read(Reg(i * 16), buf, buf_len) == buf_len) {
+            for (int j = 0; j < buf_len; j++)
+                printf(" %02x", buf[j]);
         } else {
             printf(" ERROR reading");
         }

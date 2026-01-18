@@ -2,10 +2,9 @@
 
 #include <cstdint>
 //
-#include "hardware/gpio.h"
-#include "hardware/i2c.h"
 #include "pico/stdlib.h"
 //
+#include "i2c_dev.h"
 #include "touchscreen.h"
 #include "xassert.h"
 
@@ -15,33 +14,22 @@ class Gt911 : public Touchscreen
 
 public:
 
-    Gt911(i2c_inst_t *i2c, uint8_t i2c_adrs, int scl_pin, int sda_pin,
-          int rst_pin, int int_pin, int i2c_freq = 400'000);
-    virtual ~Gt911();
+    Gt911(I2cDev &i2c, uint8_t i2c_adrs, int rst_pin, int int_pin);
+
+    virtual ~Gt911() = default;
 
     bool init(int verbosity = 0);
 
-    uint i2c_freq() const { return _i2c_freq; }
-
-    // orientation (where the connector is)
-    enum class Rotation {
-        bottom, // portrait, connector at bottom
-        left,   // landscape, connector to left
-        top,    // portrait, connecter at top
-        right,  // landscape, connector to right
-    };
-
-    void rotation(enum Rotation rot) { _rotation = rot; }
-    enum Rotation rotation() const { return _rotation; }
-
     // get up to touch_cnt_max touches
-    int get_touches(int *x, int *y, int touch_cnt_max, int verbosity = 0);
+    virtual int get_touches(int col[], int row[], int touch_cnt_max,
+                            int verbosity = 0) override;
 
-    // get one touch
-    int get_touch(int &x, int &y, int verbosity = 0)
-    {
-        return get_touches(&x, &y, 1, verbosity);
-    }
+    // Event state machine
+    // This always returns very quickly (no blocking on i2c). It will
+    // usually see that a bus operation is in progress and just return.
+    // When something finishes, it will process results, possibly returning
+    // an event, and start another operation.
+    virtual void get_event(Event &event) override;
 
     void dump();
 
@@ -52,16 +40,11 @@ private:
     static constexpr uint8_t i2c_adrs_0 = 0x5d; // if INT is 0 at reset
     static constexpr uint8_t i2c_adrs_1 = 0x14; // if INT is 1 at reset
 
-    i2c_inst_t *_i2c;
+    I2cDev &_i2c;
     uint8_t _i2c_adrs; // i2c_adrs_0 or i2c_adrs_1
-    const int _scl_pin;
-    const int _sda_pin;
-    uint _i2c_freq;
 
     const int _rst_pin;
     const int _int_pin;
-
-    enum Rotation _rotation;
 
     int _x_res;
     int _y_res;
@@ -75,13 +58,13 @@ private:
     static constexpr uint32_t reset_T3_us = 5'000;
     static constexpr uint32_t reset_T4_us = 50'000;
 
-    enum Register : uint16_t {
+    enum Reg : uint16_t {
         // 0x8040 - 0x8046 are command-related.
         // 0x8047 - 0x80fe are checksum-protected, so changes require a
         //                 checksum update at 0x80ff to have any effect.
-        SWITCH_1 = 0x804d,   // 1 byte
-        THRESH = 0x8053,     // 2 bytes: touch, leave
-        PWR_CTRL = 0x8055,   // 1 byte
+        SWITCH_1 = 0x804d, // 1 byte
+        THRESH = 0x8053,   // 2 bytes: touch, leave
+        PWR_CTRL = 0x8055, // 1 byte
         // Most of 0x81xx is read-only
         VENDOR_ID = 0x8140,  // 4 bytes: '9', '1', '1', '\0'
         XY_RES = 0x8146,     // 4 bytes: x_lo, x_hi, y_lo, y_hi
@@ -96,13 +79,13 @@ private:
     // expected vendor ID
     static constexpr uint32_t vendor_id_exp = 0x39313100; // '9' '1' '1' '\0'
 
-    friend Register &operator+=(Register &lhs, int rhs)
+    friend Reg &operator+=(Reg &lhs, int rhs)
     {
-        lhs = static_cast<Register>(static_cast<uint16_t>(lhs) + rhs);
+        lhs = static_cast<Reg>(static_cast<uint16_t>(lhs) + rhs);
         return lhs;
     }
 
-    friend Register operator+(Register lhs, int rhs)
+    friend Reg operator+(Reg lhs, int rhs)
     {
         lhs += rhs;
         return lhs;
@@ -117,18 +100,54 @@ private:
 
     void reset(uint8_t i2c_adrs);
 
-    int read(Register reg, uint8_t *buf, int buf_len);
+    int read(Reg reg, uint8_t *buf, int buf_len);
 
-    int write(Register reg, const uint8_t *buf, int buf_len);
+    int write(Reg reg, const uint8_t *buf, int buf_len);
 
-    bool read_checked(Register reg, uint8_t *buf, int buf_len, //
+    bool read_checked(Reg reg, uint8_t *buf, int buf_len, //
                       const char *label = nullptr, int verbosity = 0);
 
-    bool write_checked(Register reg, uint8_t *buf, int buf_len, //
+    bool write_checked(Reg reg, uint8_t *buf, int buf_len, //
                        const char *label = nullptr, int verbosity = 0);
 
     bool get_vendor_id(uint32_t &vendor_id, int verbosity = 0);
     bool read_resolution(int verbosity = 0);
 
-    void rotate(int &x, int &y) const;
-};
+    void rotate(int x, int y, int &col, int &row) const;
+
+    // Event State Machine
+
+    // Last event emitted
+    Event _last_event;
+
+    // Next time we might poll the status register.
+    // According to the "GT911 Programming Guide v0.1", we're supposed to wait
+    // at least 1 msec between polls, although before this delay was added it
+    // seemed to work fine without the extra delay.
+    uint32_t _poll_us;
+
+    enum class I2cState {
+        idle,
+        status_read,
+        touch_read,
+        status_write,
+    } _i2c_state;
+
+    // for async reads
+    uint8_t _status[1];
+    uint8_t _touch[4];
+
+    // The start_* and check_* functions are called by get_event() to
+    // implement the event state machine. The start_* functions start an i2c
+    // operation and set the state accordingly. The check_* functions retrieve
+    // results of an i2c operation and process them, always starting another
+    // i2c operation.
+
+    void start_status_read();
+    void start_status_write();
+    void start_touch_read();
+
+    void check_status_read(Event &event);
+    void check_touch_read(Event &event);
+
+}; // class Gt911

@@ -7,6 +7,9 @@
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
 //
+#include "argv.h"
+#include "i2c_dev.h"
+#include "str_ops.h"
 #include "sys_led.h"
 #include "touchscreen.h"
 #include "xassert.h"
@@ -14,66 +17,89 @@
 #include "gt911.h"
 
 // Pico
-//        +----------| USB |----------+
-//        | 1  GPIO0      VBUS_OUT 40 |
-//        | 2  GPIO1   VSYS_IN_OUT 39 |
-//        | 3  GND             GND 38 |
-//        | 4  GPIO2        3V3_EN 37 |
-//        | 5  GPIO3       3V3_OUT 36 |
-// TP_SDA | 6  I2C0_SDA/4     AREF 35 |
-// TP_SCL | 7  I2C0_SCL/5   GPIO28 34 |
-//        | 8  GND             GND 33 |
-// TP_RST | 9  GPIO6        GPIO27 32 |
-// TP_INT | 10 GPIO7        GPIO26 31 |
-//        | 11 GPIO8           RUN 30 |
-//        | 12 GPIO9        GPIO22 29 | LED  (fb)
-//        | 13 GND             GND 28 |
-//        | 14 GPIO10       GPIO21 27 | RST  (fb)
-//        | 15 GPIO11       GPIO20 26 | CD   (fb)
-//        | 16 GPIO12   SPI0_TX/19 25 | MOSI (fb)
-//        | 17 GPIO13  SPI0_SCK/18 24 | SCK  (fb)
-//        | 18 GND             GND 23 |
-//        | 19 GPIO14  SPI0_CSn/17 22 | CS   (fb)
-//        | 20 GPIO15   SPI0_RX/16 21 | MISO (fb)
-//        +---------------------------+
+//              +------| USB |------+
+//            1 | D0       VBUS_OUT | 40
+//            2 | D1        VSYS_IO | 39
+//            3 | GND           GND | 38
+//            4 | D2         3V3_EN | 37
+//            5 | D3        3V3_OUT | 36
+// (ts) SDA   6 | D4           AREF | 35
+// (ts) SCL   7 | D5            D28 | 34
+//            8 | GND           GND | 33
+// (ts) RST   9 | D6            D27 | 32
+// (ts) INT  10 | D7            D26 | 31
+//           11 | D8            RUN | 30
+//           12 | D9            D22 | 29  LED  (fb)
+//           13 | GND           GND | 28
+//           14 | D10           D21 | 27  RST  (fb)
+//           15 | D11           D20 | 26  CD   (fb)
+//           16 | D12           D19 | 25  MOSI (fb)
+//           17 | D13           D18 | 24  SCK  (fb)
+//           18 | GND           GND | 23
+//           19 | D14           D17 | 22  CS   (fb)
+//           20 | D15           D16 | 21  MISO (fb)
+//              +-------------------+
 
 static const int tp_sda_pin = 4;
 static const int tp_scl_pin = 5;
 static const int tp_rst_pin = 6;
 static const int tp_int_pin = 7;
-
-static const int i2c_freq = 400'000;
+static const int tp_i2c_baud = 400'000;
 
 static const uint8_t tp_adrs = 0x14; // 0x14 or 0x5d
 
-static void test_1(Gt911 &ts);
-static void test_2(Gt911 &ts);
-static void rotations(Gt911 &ts);
+static void touches(Touchscreen &ts);
+static void rotations(Touchscreen &ts);
+static void poll_events(Touchscreen &ts);
+
+static struct {
+    const char *name;
+    void (*func)(Touchscreen &);
+} tests[] = {
+    {"touches", touches},
+    {"rotations", rotations},
+    {"poll_events", poll_events},
+};
+static const int num_tests = sizeof(tests) / sizeof(tests[0]);
+
+
+static void help()
+{
+    printf("\n");
+    printf("Usage: enter test number (0..%d)\n", num_tests - 1);
+    for (int i = 0; i < num_tests; i++)
+        printf("%2d: %s\n", i, tests[i].name);
+    printf("\n");
+}
 
 
 int main()
 {
     stdio_init_all();
-    SysLed::init();
 
+    SysLed::init();
     SysLed::pattern(50, 950);
 
-#if 0
     while (!stdio_usb_connected()) {
         SysLed::loop();
         tight_loop_contents();
     }
-    sleep_ms(10); // small delay needed or we lose the first prints
-#endif
+
+    sleep_ms(10);
 
     SysLed::off();
 
-    // Touchscreen
+    printf("\n");
+    printf("gt911_test\n");
+    printf("\n");
 
-    Gt911 gt911(i2c0, tp_adrs, tp_sda_pin, tp_scl_pin, tp_rst_pin, tp_int_pin,
-                i2c_freq);
+    Argv argv(1); // verbosity == 1 means echo
 
-    printf("Gt911: i2c running at %u Hz\n", gt911.i2c_freq());
+    I2cDev i2c_dev(i2c0, tp_scl_pin, tp_sda_pin, tp_i2c_baud);
+
+    printf("Gt911: i2c running at %u Hz\n", i2c_dev.baud());
+
+    Gt911 gt911(i2c_dev, tp_adrs, tp_rst_pin, tp_int_pin);
 
     constexpr int verbosity = 2;
     if (!gt911.init(verbosity)) {
@@ -82,111 +108,153 @@ int main()
     }
     printf("Gt911: ready\n");
 
-    gt911.rotation(Gt911::Rotation::left);
+    gt911.set_rotation(Gt911::Rotation::landscape);
 
     sleep_ms(100);
 
-    //gt911.dump();
-    //sleep_ms(1000);
+    help();
+    printf("> ");
 
-    do {
-        //test_1(gt911); sleep_ms(1000);
-        test_2(gt911); sleep_ms(10);
-        sleep_ms(10);
-        //rotations(gt911);
-    } while (true);
-
-    return 0;
-}
-
-
-static void poll_touch(Gt911 &ts)
-{
-    int x1, y1;
-    int cnt = ts.get_touch(x1, y1);
-    printf("cnt=%d", cnt);
-    if (cnt >= 1)
-        printf(" (%d,%d)", x1, y1);
-    printf("\n");
-}
-
-
-// read and print touch info once
-[[maybe_unused]]
-static void test_1(Gt911 &ts)
-{
-    poll_touch(ts);
-}
-
-
-// read status and report touches only if something changed
-[[maybe_unused]]
-static void test_2(Gt911 &ts)
-{
-    constexpr int t_max = 5;
-
-    static int x[t_max] = {-1, -1, -1, -1, -1};
-    static int y[t_max] = {-1, -1, -1, -1, -1};
-    static int cnt = -1;
-
-    int new_x[t_max];
-    int new_y[t_max];
-    int new_cnt = ts.get_touches(new_x, new_y, t_max);
-
-    bool changed = false;
-    if (new_cnt != cnt) {
-        changed = true;
-    } else {
-        for (int t = 0; t < new_cnt; t++) {
-            if (new_x[t] != x[t] || new_y[t] != y[t]) {
-                changed = true;
-                break;
+    while (true) {
+        int c = stdio_getchar_timeout_us(0);
+        if (0 <= c && c <= 255) {
+            if (argv.add_char(char(c))) {
+                int test_num = -1;
+                if (argv.argc() != 1) {
+                    printf("\n");
+                    printf("One integer only (got %d)\n", argv.argc());
+                    help();
+                } else if (!str_to_int(argv[0], &test_num)) {
+                    printf("\n");
+                    printf("Invalid test number: \"%s\"\n", argv[0]);
+                    help();
+                } else if (test_num < 0 || test_num >= num_tests) {
+                    printf("\n");
+                    printf("Test number out of range: %d\n", test_num);
+                    help();
+                } else {
+                    printf("\n");
+                    printf("Running \"%s\"\n", tests[test_num].name);
+                    printf("\n");
+                    tests[test_num].func(gt911);
+                    printf("> ");
+                }
+                argv.reset();
             }
         }
     }
 
-    for (int t = 0; t < t_max; t++) {
-        x[t] = new_x[t];
-        y[t] = new_y[t];
-    }
-    cnt = new_cnt;
+    sleep_ms(100);
+    return 0;
+}
 
-    if (changed) {
-        printf("cnt=%d", cnt);
-        for (int t = 0; t < cnt; t++) printf(" (%d,%d)", x[t], y[t]);
-        printf("\n");
+
+// read status and report touches only if something changed
+static void touches(Touchscreen &ts)
+{
+    constexpr int t_max = 5;
+
+    static int col[t_max] = {-1, -1, -1, -1, -1};
+    static int row[t_max] = {-1, -1, -1, -1, -1};
+    static int cnt = -1;
+
+    while (true) {
+        int new_col[t_max];
+        int new_row[t_max];
+        int new_cnt = ts.get_touches(new_col, new_row, t_max);
+
+        bool changed = false;
+        if (new_cnt != cnt) {
+            changed = true;
+        } else {
+            for (int t = 0; t < new_cnt; t++) {
+                if (new_col[t] != col[t] || new_row[t] != row[t]) {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
+        for (int t = 0; t < t_max; t++) {
+            col[t] = new_col[t];
+            row[t] = new_row[t];
+        }
+        cnt = new_cnt;
+
+        if (changed) {
+            printf("cnt=%d", cnt);
+            for (int t = 0; t < cnt; t++)
+                printf(" (%d,%d)", col[t], row[t]);
+            printf("\n");
+        }
+
+        sleep_ms(100);
     }
 }
 
 
-[[maybe_unused]]
-static void rotations(Gt911 &ts)
+static void do_rotation(Touchscreen &ts, Touchscreen::Rotation r)
 {
-    ts.rotation(Gt911::Rotation::bottom);
-    printf("rotation: bottom\n");
-    for (int i = 0; i < 10; i++) {
-        poll_touch(ts);
-        sleep_ms(200);
-    }
+    ts.set_rotation(r);
+    int w_13 = ts.width() / 3;
+    int w_23 = (ts.width() * 2) / 3;
+    int h_13 = ts.height() / 3;
+    int h_23 = (ts.height() * 2) / 3;
 
-    ts.rotation(Gt911::Rotation::left);
-    printf("rotation: left\n");
-    for (int i = 0; i < 10; i++) {
-        poll_touch(ts);
-        sleep_ms(200);
-    }
+    sleep_ms(1000);
 
-    ts.rotation(Gt911::Rotation::top);
-    printf("rotation: top\n");
-    for (int i = 0; i < 10; i++) {
-        poll_touch(ts);
-        sleep_ms(200);
-    }
+    int cnt, col, row;
 
-    ts.rotation(Gt911::Rotation::right);
-    printf("rotation: right\n");
-    for (int i = 0; i < 10; i++) {
-        poll_touch(ts);
+    // purge
+    while (ts.get_touches(&col, &row, 1) > 0)
+        ;
+
+    while (true) {
         sleep_ms(200);
+        cnt = ts.get_touches(&col, &row, 1);
+        // return on touch near center
+        // print other touches
+        if (cnt == 0)
+            continue;
+        printf("(%d,%d)\n", col, row);
+        if (col > w_13 && col < w_23 && row > h_13 && row < h_23)
+            break;
+    }
+}
+
+
+static void rotations(Touchscreen &ts)
+{
+    // test by touching near the corners, move on by touching near the center
+
+    ts.set_rotation(Gt911::Rotation::landscape);
+    printf("Rotation::landscape: width=%d height=%d\n", ts.width(),
+           ts.height());
+    do_rotation(ts, Gt911::Rotation::landscape);
+
+    ts.set_rotation(Gt911::Rotation::portrait);
+    printf("Rotation::portrait: width=%d height=%d\n", ts.width(), ts.height());
+    do_rotation(ts, Gt911::Rotation::portrait);
+
+    ts.set_rotation(Gt911::Rotation::landscape2);
+    printf("Rotation::landscape2: width=%d height=%d\n", ts.width(),
+           ts.height());
+    do_rotation(ts, Gt911::Rotation::landscape2);
+
+    ts.set_rotation(Gt911::Rotation::portrait2);
+    printf("Rotation::portrait2: width=%d height=%d\n", ts.width(),
+           ts.height());
+    do_rotation(ts, Gt911::Rotation::portrait2);
+}
+
+
+static void poll_events(Touchscreen &ts)
+{
+    Touchscreen::Event event;
+    while (true) {
+        ts.get_event(event);
+        if (event.type != Touchscreen::Event::Type::none)
+            printf("poll_events: type=%s (%d, %d)\n", //
+                   event.type_name(), event.col, event.row);
     }
 }

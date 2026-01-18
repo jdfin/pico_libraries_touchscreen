@@ -45,7 +45,7 @@ static const int tp_int_pin = 7;
 
 static const int i2c_freq = 100'000;
 
-static void test_1(Ft6336u &ts);
+static void test_1(Touchscreen &ts);
 
 
 int main()
@@ -91,16 +91,16 @@ int main()
 
 
 [[maybe_unused]]
-static void test_1([[maybe_unused]] Ft6336u &ts)
+static void test_1(Touchscreen &ts)
 {
     while (true) {
-        int e1, x1, y1, e2, x2, y2;
-        int cnt = ts.get_touch(e1, x1, y1, e2, x2, y2, 2);
+        int x[2], y[2];
+        int cnt = ts.get_touches(x, y, 2);
         printf("cnt=%d", cnt);
         if (cnt >= 1) {
-            printf(" %d:(%d,%d)", e1, x1, y1);
+            printf(" (%d,%d)", x[0], y[0]);
             if (cnt >= 2) {
-                printf(" %d:(%d,%d)", e2, x2, y2);
+                printf(" (%d,%d)", x[1], y[1]);
             }
         }
         printf("\n");
