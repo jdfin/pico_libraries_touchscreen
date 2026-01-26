@@ -1,4 +1,5 @@
 
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -8,28 +9,27 @@
 #include "pico/stdlib.h"
 // misc
 #include "i2c_dev.h"
-#include "xassert.h"
 // touchscreen
 #include "gt911.h"
 #include "touchscreen.h"
 
 
-Gt911::Gt911(I2cDev &i2c, uint8_t i2c_adrs, int rst_pin, int int_pin) :
+Gt911::Gt911(I2cDev &i2c, uint8_t i2c_addr, int rst_pin, int int_pin) :
     Touchscreen(480, 320),
     _i2c(i2c),
-    _i2c_adrs(i2c_adrs),
+    _i2c_addr(i2c_addr),
     _rst_pin(rst_pin),
     _int_pin(int_pin),
     _poll_us(0),
     _i2c_state(I2cState::idle)
 {
-    xassert(_i2c_adrs == i2c_adrs_0 || _i2c_adrs == i2c_adrs_1);
+    assert(_i2c_addr == i2c_addr_0 || _i2c_addr == i2c_addr_1);
     out_low(_rst_pin);
     out_low(_int_pin);
 }
 
 
-void Gt911::reset(uint8_t i2c_adrs)
+void Gt911::reset(uint8_t i2c_addr)
 {
     // See datasheet: INT pin is temporarily an output around reset time, and
     // whether it is hi or lo determines the i2c address.
@@ -40,11 +40,11 @@ void Gt911::reset(uint8_t i2c_adrs)
     //
     // X: INT is hi or lo to set i2c address
     // Z: INT is changed to input
-    xassert(i2c_adrs == i2c_adrs_0 || i2c_adrs == i2c_adrs_1);
+    assert(i2c_addr == i2c_addr_0 || i2c_addr == i2c_addr_1);
     out_low(_rst_pin);
     out_low(_int_pin);
     sleep_us(reset_T1_us);
-    if (i2c_adrs == i2c_adrs_1)
+    if (i2c_addr == i2c_addr_1)
         gpio_put(_int_pin, gpio_hi);
     sleep_us(reset_T2_us);
     gpio_put(_rst_pin, gpio_hi);
@@ -61,7 +61,7 @@ void Gt911::reset(uint8_t i2c_adrs)
 // 2 - print registers as read
 bool Gt911::init(int verbosity)
 {
-    reset(_i2c_adrs);
+    reset(_i2c_addr);
 
     // check vendor ID
     uint32_t vendor_id;
@@ -89,8 +89,8 @@ bool Gt911::init(int verbosity)
         printf("Gt911::init: %s\n", show_switch_1(switch_1, buf, sizeof(buf)));
     }
 
-    xassert(_x_res == 320 && _y_res == 480);
-    xassert((switch_1 & 0xc0) == 0x80); // y2y=1, x2x=0
+    assert(_x_res == 320 && _y_res == 480);
+    assert((switch_1 & 0xc0) == 0x80); // y2y=1, x2x=0
 
     // The following interpretations of (x,y) could be generalized.
     //
@@ -255,10 +255,10 @@ int Gt911::read(Gt911::Reg reg, uint8_t *buf, int buf_len)
     const uint8_t xbuf[xbuf_len] = {uint8_t(reg >> 8), uint8_t(reg)};
 
     constexpr uint timeout_us = 10'000;
-    int err = _i2c.write_sync(_i2c_adrs, xbuf, xbuf_len, true, timeout_us);
+    int err = _i2c.write_sync(_i2c_addr, xbuf, xbuf_len, true, timeout_us);
     if (err != xbuf_len)
         return err;
-    return _i2c.read_sync(_i2c_adrs, buf, buf_len, false, timeout_us);
+    return _i2c.read_sync(_i2c_addr, buf, buf_len, false, timeout_us);
 }
 
 
@@ -269,7 +269,7 @@ int Gt911::write(Gt911::Reg reg, const uint8_t *buf, int buf_len)
     constexpr int xbuf_len = 32;
     uint8_t xbuf[xbuf_len];
 
-    xassert(buf_len < (xbuf_len - static_cast<int>(sizeof(reg))));
+    assert(buf_len < (xbuf_len - static_cast<int>(sizeof(reg))));
 
     xbuf[0] = uint8_t(reg >> 8); // hi byte
     xbuf[1] = uint8_t(reg);      // lo byte
@@ -277,7 +277,7 @@ int Gt911::write(Gt911::Reg reg, const uint8_t *buf, int buf_len)
         xbuf[sizeof(reg) + i] = buf[i];
 
     constexpr uint timeout_us = 10'000;
-    int ret = _i2c.write_sync(_i2c_adrs, xbuf, sizeof(reg) + buf_len, false,
+    int ret = _i2c.write_sync(_i2c_addr, xbuf, sizeof(reg) + buf_len, false,
                               timeout_us);
     if (ret >= 0)
         return ret - sizeof(reg); // return buf_len if everything went ok
@@ -289,7 +289,7 @@ int Gt911::write(Gt911::Reg reg, const uint8_t *buf, int buf_len)
 bool Gt911::read_checked(Reg reg, uint8_t *buf, int buf_len, //
                          const char *label, int verbosity)
 {
-    xassert(verbosity == 0 || label != nullptr);
+    assert(verbosity == 0 || label != nullptr);
     if (read(reg, buf, buf_len) != buf_len) {
         if (verbosity >= 1)
             printf("Gt911: ERROR: reading %s\n", label);
@@ -308,7 +308,7 @@ bool Gt911::read_checked(Reg reg, uint8_t *buf, int buf_len, //
 bool Gt911::write_checked(Reg reg, uint8_t *buf, int buf_len, //
                           const char *label, int verbosity)
 {
-    xassert(verbosity == 0 || label != nullptr);
+    assert(verbosity == 0 || label != nullptr);
     if (write(reg, buf, buf_len) != buf_len) {
         if (verbosity >= 1)
             printf("Gt911: ERROR: writing %s\n", label);
@@ -327,12 +327,12 @@ bool Gt911::write_checked(Reg reg, uint8_t *buf, int buf_len, //
 // Event State Machine
 
 
-void Gt911::get_event(Touchscreen::Event &event)
+Touchscreen::Event Gt911::get_event()
 {
-    event.reset();
+    Touchscreen::Event event; // default: type=none
 
     if (_i2c.busy())
-        return; // nothing new
+        return event; // nothing new
 
     uint32_t now_us;
     int32_t late_us;
@@ -364,10 +364,12 @@ void Gt911::get_event(Touchscreen::Event &event)
             break;
 
         default:
-            xassert(false);
+            assert(false);
             break;
 
     } // switch (_i2c_state)
+
+    return event;
 }
 
 
@@ -375,7 +377,7 @@ void Gt911::start_status_read()
 {
     const uint8_t wr_buf[] = {uint8_t(Reg::TOUCH_STAT >> 8),
                               uint8_t(Reg::TOUCH_STAT)};
-    _i2c.write_read_async_start(_i2c_adrs, wr_buf, sizeof(wr_buf), //
+    _i2c.write_read_async_start(_i2c_addr, wr_buf, sizeof(wr_buf), //
                                 _status, sizeof(_status));
     _i2c_state = I2cState::status_read;
 }
@@ -385,7 +387,7 @@ void Gt911::start_status_write()
 {
     const uint8_t wr_buf[] = {uint8_t(Reg::TOUCH_STAT >> 8),
                               uint8_t(Reg::TOUCH_STAT), 0};
-    _i2c.write_read_async_start(_i2c_adrs, wr_buf, sizeof(wr_buf));
+    _i2c.write_read_async_start(_i2c_addr, wr_buf, sizeof(wr_buf));
     _i2c_state = I2cState::status_write;
 }
 
@@ -393,7 +395,7 @@ void Gt911::start_status_write()
 void Gt911::start_touch_read()
 {
     uint8_t wr_buf[] = {uint8_t(Reg::TOUCH_1 >> 8), uint8_t(Reg::TOUCH_1)};
-    _i2c.write_read_async_start(_i2c_adrs, wr_buf, sizeof(wr_buf), //
+    _i2c.write_read_async_start(_i2c_addr, wr_buf, sizeof(wr_buf), //
                                 _touch, sizeof(_touch));
     _i2c_state = I2cState::touch_read;
 }
@@ -447,8 +449,8 @@ void Gt911::check_touch_read(Event &event)
             _last_event.row = row;
             event = _last_event;
         } else {
-            xassert(_last_event.type == Event::Type::down ||
-                    _last_event.type == Event::Type::move);
+            assert(_last_event.type == Event::Type::down ||
+                   _last_event.type == Event::Type::move);
             // only report a move if the touch actually moved
             if (_last_event.col != col || _last_event.row != row) {
                 _last_event.type = Event::Type::move;
@@ -470,7 +472,7 @@ void Gt911::rotate(int x, int y, int &col, int &row) const
 {
     // Need trickier code if this is not true or if the assert on switch_1 in
     // init() fails.
-    xassert(_x_res == 320 && _y_res == 480);
+    assert(_x_res == 320 && _y_res == 480);
 
     // clamp inputs (have not observed out of range, but it's a cheap check)
     if (x < 0)
@@ -501,7 +503,7 @@ void Gt911::rotate(int x, int y, int &col, int &row) const
             break;
 
         default:
-            xassert(get_rotation() == Rotation::portrait2);
+            assert(get_rotation() == Rotation::portrait2);
             col = (_x_res - 1) - x;
             row = (_y_res - 1) - y;
             break;

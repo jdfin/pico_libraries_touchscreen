@@ -1,13 +1,13 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
-//
+// pico
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "pico/stdlib.h"
-//
+// touchscreen
 #include "touchscreen.h"
-#include "xassert.h"
 
 
 class Ft6336u : public Touchscreen
@@ -22,13 +22,17 @@ public:
 
     bool init(int verbosity = 0);
 
-    uint i2c_freq() const { return _i2c_freq; }
+    uint i2c_freq() const
+    {
+        return _i2c_freq;
+    }
 
     virtual void set_rotation(Rotation r) override;
 
-    virtual int get_touches(int *col, int *row, int touch_cnt_max, int verbosity = 0) override;
+    virtual int get_touches(int *col, int *row, int touch_cnt_max,
+                            int verbosity = 0) override;
 
-    virtual void get_event(Event &event) override;
+    virtual Event get_event() override;
 
     void dump();
 
@@ -105,7 +109,7 @@ private:
     void out_low(int gpio_num)
     {
         gpio_init(gpio_num);
-        gpio_put(gpio_num, false); // low
+        gpio_put(gpio_num, false);    // low
         gpio_set_dir(gpio_num, true); // out
     }
 
@@ -115,5 +119,5 @@ private:
 
     int write(Reg reg, const uint8_t *buf, int buf_len);
 
-    void rotate(int x, int y, int& col, int& row) const;
+    void rotate(int x, int y, int &col, int &row) const;
 };

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "xassert.h"
+#include <cassert>
 
 
 class Touchscreen
@@ -16,9 +16,9 @@ public:
     {
         // Initialization of width, height, and rotation assume we
         // start out in landscape mode and _phys_wid >= _phys_hgt.
-        xassert(_rotation == Rotation::landscape ||
+        assert(_rotation == Rotation::landscape ||
                 _rotation == Rotation::landscape2);
-        xassert(_phys_wid >= _phys_hgt);
+        assert(_phys_wid >= _phys_hgt);
     }
 
     virtual ~Touchscreen() = default;
@@ -48,13 +48,13 @@ public:
             _rotation == Rotation::landscape2) {
             _width = _phys_wid;
             _height = _phys_hgt;
-            xassert(_width >= _height);
+            assert(_width >= _height);
         } else {
-            xassert(_rotation == Rotation::portrait ||
+            assert(_rotation == Rotation::portrait ||
                     _rotation == Rotation::portrait2);
             _width = _phys_hgt;
             _height = _phys_wid;
-            xassert(_width <= _height);
+            assert(_width <= _height);
         }
     }
 
@@ -78,6 +78,7 @@ public:
         enum class Type { none, down, up, move, } type;
         int col, row;
         Event() : type(Type::none), col(0), row(0) { }
+        Event(Type t, int c, int r) : type(t), col(c), row(r) { }
         void reset()
         {
             type = Type::none;
@@ -98,7 +99,7 @@ public:
     // clang-format on
 
     // event state machine
-    virtual void get_event(Event &event) = 0;
+    virtual Event get_event() = 0;
 
 private:
 

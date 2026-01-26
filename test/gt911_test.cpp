@@ -1,20 +1,20 @@
 
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
-//
+// pico
 #include "hardware/i2c.h"
 #include "pico/stdio.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
-//
+// misc
 #include "argv.h"
 #include "i2c_dev.h"
 #include "str_ops.h"
 #include "sys_led.h"
-#include "touchscreen.h"
-#include "xassert.h"
-//
+// touchscreen
 #include "gt911.h"
+#include "touchscreen.h"
 
 // Pico
 //              +------| USB |------+
@@ -46,7 +46,7 @@ static const int tp_rst_pin = 6;
 static const int tp_int_pin = 7;
 static const int tp_i2c_baud = 400'000;
 
-static const uint8_t tp_adrs = 0x14; // 0x14 or 0x5d
+static const uint8_t tp_addr = 0x14; // 0x14 or 0x5d
 
 static void touches(Touchscreen &ts);
 static void rotations(Touchscreen &ts);
@@ -99,12 +99,12 @@ int main()
 
     printf("Gt911: i2c running at %u Hz\n", i2c_dev.baud());
 
-    Gt911 gt911(i2c_dev, tp_adrs, tp_rst_pin, tp_int_pin);
+    Gt911 gt911(i2c_dev, tp_addr, tp_rst_pin, tp_int_pin);
 
     constexpr int verbosity = 2;
     if (!gt911.init(verbosity)) {
         printf("Gt911: ERROR initializing\n");
-        xassert(false);
+        assert(false);
     }
     printf("Gt911: ready\n");
 
@@ -250,9 +250,8 @@ static void rotations(Touchscreen &ts)
 
 static void poll_events(Touchscreen &ts)
 {
-    Touchscreen::Event event;
     while (true) {
-        ts.get_event(event);
+        Touchscreen::Event event(ts.get_event());
         if (event.type != Touchscreen::Event::Type::none)
             printf("poll_events: type=%s (%d, %d)\n", //
                    event.type_name(), event.col, event.row);

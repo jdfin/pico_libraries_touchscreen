@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
-//
+// pico
 #include "pico/stdlib.h"
-//
+// misc
 #include "i2c_dev.h"
+// touchscreen
 #include "touchscreen.h"
-#include "xassert.h"
 
 
 class Gt911 : public Touchscreen
@@ -14,7 +15,7 @@ class Gt911 : public Touchscreen
 
 public:
 
-    Gt911(I2cDev &i2c, uint8_t i2c_adrs, int rst_pin, int int_pin);
+    Gt911(I2cDev &i2c, uint8_t i2c_addr, int rst_pin, int int_pin);
 
     virtual ~Gt911() = default;
 
@@ -29,7 +30,7 @@ public:
     // usually see that a bus operation is in progress and just return.
     // When something finishes, it will process results, possibly returning
     // an event, and start another operation.
-    virtual void get_event(Event &event) override;
+    virtual Event get_event() override;
 
     void dump();
 
@@ -37,11 +38,11 @@ public:
 
 private:
 
-    static constexpr uint8_t i2c_adrs_0 = 0x5d; // if INT is 0 at reset
-    static constexpr uint8_t i2c_adrs_1 = 0x14; // if INT is 1 at reset
+    static constexpr uint8_t i2c_addr_0 = 0x5d; // if INT is 0 at reset
+    static constexpr uint8_t i2c_addr_1 = 0x14; // if INT is 1 at reset
 
     I2cDev &_i2c;
-    uint8_t _i2c_adrs; // i2c_adrs_0 or i2c_adrs_1
+    uint8_t _i2c_addr; // i2c_addr_0 or i2c_addr_1
 
     const int _rst_pin;
     const int _int_pin;
@@ -98,7 +99,7 @@ private:
         gpio_set_dir(gpio_num, true); // out
     }
 
-    void reset(uint8_t i2c_adrs);
+    void reset(uint8_t i2c_addr);
 
     int read(Reg reg, uint8_t *buf, int buf_len);
 

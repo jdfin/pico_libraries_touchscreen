@@ -1,14 +1,14 @@
 
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
-//
+// pico
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "pico/stdlib.h"
-//
+// touchscreen
 #include "ft6336u.h"
 #include "touchscreen.h"
-#include "xassert.h"
 
 
 Ft6336u::Ft6336u(i2c_inst_t *i2c, int scl_pin, int sda_pin, int rst_pin,
@@ -20,18 +20,18 @@ Ft6336u::Ft6336u(i2c_inst_t *i2c, int scl_pin, int sda_pin, int rst_pin,
     _rst_pin(rst_pin),
     _int_pin(int_pin)
 {
-    xassert(_i2c != nullptr);
+    assert(_i2c != nullptr);
     _i2c_freq = i2c_init(_i2c, i2c_freq);
 
     // Just drive the I2C signals low for now. The reset() method will switch
     // them back to I2C.
-    xassert(_scl_pin >= 0);
+    assert(_scl_pin >= 0);
     out_low(_scl_pin);
 
-    xassert(_sda_pin >= 0);
+    assert(_sda_pin >= 0);
     out_low(_sda_pin);
 
-    xassert(_rst_pin >= 0);
+    assert(_rst_pin >= 0);
     out_low(_rst_pin);
 
     if (_int_pin >= 0) {
@@ -86,7 +86,7 @@ void Ft6336u::reset()
     start_us = time_us_32();
     while (!gpio_get(_int_pin) && (time_us_32() - start_us) <= max_wait_us)
         ;
-    xassert(gpio_get(_int_pin));
+    assert(gpio_get(_int_pin));
     printf("INT high %lu usec after reset\n", time_us_32() - start_us);
 
 #if 0
@@ -94,7 +94,7 @@ void Ft6336u::reset()
     start_us = time_us_32();
     while (gpio_get(_int_pin) && (time_us_32() - start_us) <= max_wait_us)
         ;
-    xassert(!gpio_get(_int_pin));
+    assert(!gpio_get(_int_pin));
     printf("INT low %lu usec after INT high\n", time_us_32() - start_us);
 #else
     // sleep more after INT goes high
@@ -250,7 +250,7 @@ int Ft6336u::write(Ft6336u::Reg reg, const uint8_t *buf, int buf_len)
     constexpr int xbuf_len = 32;
     uint8_t xbuf[xbuf_len];
 
-    xassert(buf_len < (xbuf_len - 1));
+    assert(buf_len < (xbuf_len - 1));
 
     xbuf[0] = reg;
     for (int i = 0; i < buf_len; i++) {
@@ -279,8 +279,10 @@ void Ft6336u::rotate(int x, int y, int &col, int &row) const
 }
 
 
-void Ft6336u::get_event([[maybe_unused]] Event &event)
+Touchscreen::Event Ft6336u::get_event()
 {
+    Touchscreen::Event event;
+    return event;
 }
 
 

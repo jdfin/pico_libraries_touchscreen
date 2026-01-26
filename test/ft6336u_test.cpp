@@ -1,16 +1,16 @@
 
+#include <cassert>
 #include <cstdio>
-//
+// pico
 #include "hardware/i2c.h"
 #include "pico/stdio.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
-//
+// misc
 #include "sys_led.h"
-#include "touchscreen.h"
-#include "xassert.h"
-//
+// touchscreen
 #include "ft6336u.h"
+#include "touchscreen.h"
 
 
 // Pico:
@@ -72,7 +72,7 @@ int main()
 
     if (!ft6336u.init(2)) {
         printf("Ft6336u: ERROR initializing\n");
-        xassert(false);
+        assert(false);
     }
     printf("Ft6336u: ready\n");
 
