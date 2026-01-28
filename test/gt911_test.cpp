@@ -15,38 +15,11 @@
 // touchscreen
 #include "gt911.h"
 #include "touchscreen.h"
+//
+#include "ts_gpio_cfg.h"
 
-// Pico
-//              +------| USB |------+
-//            1 | D0       VBUS_OUT | 40
-//            2 | D1        VSYS_IO | 39
-//            3 | GND           GND | 38
-//            4 | D2         3V3_EN | 37
-//            5 | D3        3V3_OUT | 36
-// (ts) SDA   6 | D4           AREF | 35
-// (ts) SCL   7 | D5            D28 | 34
-//            8 | GND           GND | 33
-// (ts) RST   9 | D6            D27 | 32
-// (ts) INT  10 | D7            D26 | 31
-//           11 | D8            RUN | 30
-//           12 | D9            D22 | 29  LED  (fb)
-//           13 | GND           GND | 28
-//           14 | D10           D21 | 27  RST  (fb)
-//           15 | D11           D20 | 26  CD   (fb)
-//           16 | D12           D19 | 25  MOSI (fb)
-//           17 | D13           D18 | 24  SCK  (fb)
-//           18 | GND           GND | 23
-//           19 | D14           D17 | 22  CS   (fb)
-//           20 | D15           D16 | 21  MISO (fb)
-//              +-------------------+
-
-static const int tp_sda_pin = 4;
-static const int tp_scl_pin = 5;
-static const int tp_rst_pin = 6;
-static const int tp_int_pin = 7;
-static const int tp_i2c_baud = 400'000;
-
-static const uint8_t tp_addr = 0x14; // 0x14 or 0x5d
+static const int ts_i2c_baud = 400'000;
+static const uint8_t ts_addr = 0x14; // 0x14 or 0x5d
 
 static void touches(Touchscreen &ts);
 static void rotations(Touchscreen &ts);
@@ -95,11 +68,11 @@ int main()
 
     Argv argv(1); // verbosity == 1 means echo
 
-    I2cDev i2c_dev(i2c0, tp_scl_pin, tp_sda_pin, tp_i2c_baud);
+    I2cDev i2c_dev(ts_i2c_inst, ts_i2c_scl_gpio, ts_i2c_sda_gpio, ts_i2c_baud);
 
     printf("Gt911: i2c running at %u Hz\n", i2c_dev.baud());
 
-    Gt911 gt911(i2c_dev, tp_addr, tp_rst_pin, tp_int_pin);
+    Gt911 gt911(i2c_dev, ts_addr, ts_rst_gpio, ts_int_gpio);
 
     constexpr int verbosity = 2;
     if (!gt911.init(verbosity)) {
